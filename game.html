@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Morgenshtern: Battle Royale</title>
+    <title>Morgenshtern: Smart Enemies</title>
     <style>
         body {
             margin: 0;
@@ -88,6 +88,7 @@
         .hidden { display: none !important; }
     </style>
 </head>
+
 <body>
 
 <div id="gameContainer">
@@ -95,17 +96,17 @@
     <div id="ui">
         УРОВЕНЬ: <span id="lvlDisplay">1</span> | 
         ЖИЗНИ: <span id="livesDisplay">3</span> | 
-        ВРАГОВ ОСТАЛОСЬ: <span id="enemiesDisplay">0</span>
+        ВРАГОВ: <span id="enemiesDisplay">0</span>
     </div>
     
     <div id="overlay">
         <h1 id="overlayTitle">MORGENSTERN BATTLE</h1>
-        <p id="overlayText">Победи всех Слав Марлоу и доберись до выхода!</p>
+        <p id="overlayText">Победи всех Слав Марлоу метательными звёздами!</p>
         
         <div class="controls">
             <div>Движение: <span class="key">A</span> <span class="key">D</span> или <span class="key">←</span> <span class="key">→</span></div>
             <div>Прыжок: <span class="key">W</span> или <span class="key">↑</span> или <span class="key">SPACE</span></div>
-            <div style="margin-top:10px; color: #ff00cc;">АТАКА: <span class="key">F</span> или <span class="key">ЛКМ</span></div>
+            <div style="margin-top:10px; color: #00ffff;">БРОСОК: <span class="key">F</span> или <span class="key">ЛКМ</span></div>
         </div>
 
         <button id="startBtn" onclick="startGame()">В БОЙ!</button>
@@ -116,7 +117,6 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     
-    // UI Элементы
     const uiLvl = document.getElementById('lvlDisplay');
     const uiLives = document.getElementById('livesDisplay');
     const uiEnemies = document.getElementById('enemiesDisplay');
@@ -125,7 +125,6 @@
     const overlayText = document.getElementById('overlayText');
     const startBtn = document.getElementById('startBtn');
 
-    // Звуковой движок
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     const audioCtx = new AudioContext();
 
@@ -152,13 +151,13 @@
             gain.gain.setValueAtTime(0.2, now);
             gain.gain.linearRampToValueAtTime(0, now + 0.2);
             osc.start(now); osc.stop(now + 0.2);
-        } else if (type === 'attack') {
+        } else if (type === 'throw') {
             osc.type = 'square';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(1000, now + 0.15);
             gain.gain.setValueAtTime(0.1, now);
-            gain.gain.linearRampToValueAtTime(0, now + 0.1);
-            osc.start(now); osc.stop(now + 0.1);
+            gain.gain.linearRampToValueAtTime(0, now + 0.15);
+            osc.start(now); osc.stop(now + 0.15);
         } else if (type === 'win') {
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(400, now);
@@ -167,34 +166,38 @@
             gain.gain.setValueAtTime(0.2, now);
             gain.gain.linearRampToValueAtTime(0, now + 1.0);
             osc.start(now); osc.stop(now + 1.0);
+        } else if (type === 'respawn') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.linearRampToValueAtTime(400, now + 0.3);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.3);
+            osc.start(now); osc.stop(now + 0.3);
         }
     }
 
-    // Игрок
     const player = {
         x: 50, y: 400, w: 40, h: 60,
         vx: 0, vy: 0,
-        speed: 6, jump: -14,
+        speed: 7, jump: -14,
         grounded: false,
         lives: 3,
         facingRight: true,
-        isAttacking: false,
-        attackTimer: 0,
-        attackCooldown: 0,
+        throwCooldown: 0,
         color: '#ff00ff',
         invincible: 0
     };
 
-    const keys = { right: false, left: false, up: false, attack: false };
+    let projectiles = [];
+    const keys = { right: false, left: false, up: false, throw: false };
     let particles = [];
     let currentLevelIdx = 0;
     let isGameRunning = false;
     let levelData = null;
 
-    // Конфигурация уровней
+    // === УРОВНИ С УМНЫМИ ВРАГАМИ ===
     const levels = [
         {
-            // Уровень 1: Обучение бою
             platforms: [
                 {x: 0, y: 550, w: 900, h: 50},
                 {x: 200, y: 450, w: 150, h: 20},
@@ -202,29 +205,29 @@
                 {x: 750, y: 250, w: 100, h: 20}
             ],
             enemies: [
-                {x: 400, y: 520, w: 40, h: 40, hp: 3, maxHp: 3, speed: 2, type: 'patrol', range: [300, 600]}
+                {x: 700, y: 510, w: 40, h: 40, hp: 3, maxHp: 3, speed: 1.5, type: 'patrol', dir: -1, vy: 0, grounded: false, startX: 700, startY: 510, respawnInvincible: 0, platformIndex: 0},
+                {x: 250, y: 410, w: 40, h: 40, hp: 3, maxHp: 3, speed: 1.5, type: 'patrol', dir: 1, vy: 0, grounded: false, startX: 250, startY: 410, respawnInvincible: 0, platformIndex: 1}
             ],
             finish: {x: 800, y: 200, w: 60, h: 50},
-            start: {x: 50, y: 500}
+            start: {x: 50, y: 480}
         },
         {
-            // Уровень 2: Платформинг и враги
             platforms: [
                 {x: 0, y: 550, w: 200, h: 50},
                 {x: 250, y: 450, w: 100, h: 20},
-                {x: 400, y: 350, w: 100, h: 20},
-                {x: 600, y: 250, w: 100, h: 20},
+                {x: 450, y: 350, w: 100, h: 20},
+                {x: 650, y: 250, w: 100, h: 20},
                 {x: 800, y: 150, w: 100, h: 20}
             ],
             enemies: [
-                {x: 250, y: 420, w: 40, h: 40, hp: 3, maxHp: 3, speed: 3, type: 'chase', range: [200, 400]},
-                {x: 600, y: 220, w: 40, h: 40, hp: 3, maxHp: 3, speed: 4, type: 'patrol', range: [550, 750]}
+                {x: 700, y: 210, w: 40, h: 40, hp: 3, maxHp: 3, speed: 1.5, type: 'patrol', dir: -1, vy: 0, grounded: false, startX: 700, startY: 210, respawnInvincible: 0, platformIndex: 3},
+                {x: 300, y: 410, w: 40, h: 40, hp: 3, maxHp: 3, speed: 1.5, type: 'patrol', dir: 1, vy: 0, grounded: false, startX: 300, startY: 410, respawnInvincible: 0, platformIndex: 1},
+                {x: 850, y: 110, w: 40, h: 40, hp: 3, maxHp: 3, speed: 1.5, type: 'patrol', dir: -1, vy: 0, grounded: false, startX: 850, startY: 110, respawnInvincible: 0, platformIndex: 4}
             ],
             finish: {x: 820, y: 100, w: 60, h: 50},
-            start: {x: 50, y: 500}
+            start: {x: 50, y: 480}
         },
         {
-            // Уровень 3: Арена
             platforms: [
                 {x: 0, y: 550, w: 900, h: 50},
                 {x: 100, y: 400, w: 200, h: 20},
@@ -232,15 +235,14 @@
                 {x: 350, y: 250, w: 200, h: 20}
             ],
             enemies: [
-                {x: 150, y: 370, w: 40, h: 40, hp: 5, maxHp: 5, speed: 5, type: 'chase', range: [0, 900]},
-                {x: 650, y: 370, w: 40, h: 40, hp: 5, maxHp: 5, speed: 5, type: 'chase', range: [0, 900]},
-                {x: 400, y: 220, w: 40, h: 40, hp: 4, maxHp: 4, speed: 6, type: 'patrol', range: [350, 550]}
+                {x: 700, y: 360, w: 40, h: 40, hp: 4, maxHp: 4, speed: 2, type: 'patrol', dir: -1, vy: 0, grounded: false, startX: 700, startY: 360, respawnInvincible: 0, platformIndex: 2},
+                {x: 150, y: 360, w: 40, h: 40, hp: 4, maxHp: 4, speed: 2, type: 'patrol', dir: 1, vy: 0, grounded: false, startX: 150, startY: 360, respawnInvincible: 0, platformIndex: 1},
+                {x: 400, y: 210, w: 40, h: 40, hp: 3, maxHp: 3, speed: 2.5, type: 'patrol', dir: 1, vy: 0, grounded: false, startX: 400, startY: 210, respawnInvincible: 0, platformIndex: 3}
             ],
-            finish: {x: 400, y: 500, w: 100, h: 50}, // Финиш в центре внизу
-            start: {x: 50, y: 500}
+            finish: {x: 400, y: 500, w: 100, h: 50},
+            start: {x: 50, y: 480}
         },
         {
-            // Уровень 4: БОСС
             platforms: [
                 {x: 0, y: 550, w: 900, h: 50},
                 {x: 100, y: 450, w: 100, h: 20},
@@ -248,10 +250,10 @@
                 {x: 400, y: 300, w: 100, h: 20}
             ],
             enemies: [
-                {x: 400, y: 500, w: 60, h: 60, hp: 10, maxHp: 10, speed: 3.5, type: 'boss', range: [0, 900]}
+                {x: 400, y: 490, w: 60, h: 60, hp: 8, maxHp: 8, speed: 1.5, type: 'boss', dir: 1, vy: 0, grounded: false, startX: 400, startY: 490, respawnInvincible: 0, platformIndex: 0}
             ],
             finish: {x: 800, y: 500, w: 60, h: 50},
-            start: {x: 50, y: 500}
+            start: {x: 50, y: 480}
         }
     ];
 
@@ -261,7 +263,6 @@
             return;
         }
         currentLevelIdx = idx;
-        // Глубокое копирование уровня, чтобы восстанавливать HP врагов при рестарте уровня
         levelData = JSON.parse(JSON.stringify(levels[idx]));
         
         player.x = levelData.start.x;
@@ -269,6 +270,10 @@
         player.vx = 0;
         player.vy = 0;
         player.invincible = 0;
+        player.throwCooldown = 0;
+        
+        projectiles = [];
+        particles = [];
         
         updateUI();
     }
@@ -284,7 +289,6 @@
     function updateUI() {
         uiLvl.innerText = currentLevelIdx + 1;
         uiLives.innerText = player.lives;
-        // Считаем живых врагов
         const aliveEnemies = levelData.enemies.filter(e => e.hp > 0).length;
         uiEnemies.innerText = aliveEnemies;
     }
@@ -302,50 +306,65 @@
         }
     }
 
-    function attack() {
-        if (player.attackCooldown > 0 || player.isAttacking) return;
+    function throwProjectile() {
+        if (player.throwCooldown > 0) return;
         
-        player.isAttacking = true;
-        player.attackTimer = 15; // Длительность атаки в кадрах
-        player.attackCooldown = 20; // Перезарядка
-        playSound('attack');
+        player.throwCooldown = 15;
+        playSound('throw');
 
-        // Проверка попадания
-        const attackRange = 60;
-        const attackX = player.facingRight ? player.x + player.w : player.x - attackRange;
-        const attackY = player.y;
-        const attackW = attackRange;
-        const attackH = player.h;
+        projectiles.push({
+            x: player.facingRight ? player.x + player.w : player.x,
+            y: player.y + player.h / 2,
+            vx: player.facingRight ? 15 : -15,
+            vy: 0,
+            w: 15,
+            h: 15,
+            life: 150
+        });
+    }
 
-        levelData.enemies.forEach(enemy => {
-            if (enemy.hp <= 0) return;
-
-            // Простая проверка коллизии атаки
-            if (attackX < enemy.x + enemy.w &&
-                attackX + attackW > enemy.x &&
-                attackY < enemy.y + enemy.h &&
-                attackY + attackH > enemy.y) {
-                
-                // УДАР!
-                enemy.hp--;
-                enemy.x += player.facingRight ? 30 : -30; // Отталкивание
-                enemy.y -= 10;
-                createParticles(enemy.x + enemy.w/2, enemy.y + enemy.h/2, '#ff0000', 10);
-                playSound('hit');
-                
-                if (enemy.hp <= 0) {
-                    createParticles(enemy.x, enemy.y, '#ffffff', 30, 8);
-                    playSound('win'); // Звук смерти врага
-                }
-                updateUI();
+    // === УМНЫЙ ИИ ВРАГОВ ===
+    function checkEdgeAhead(enemy, platforms) {
+        const checkDistance = 25; // Проверка за 25 пикселей вперёд
+        const checkY = enemy.y + enemy.h + 5; // Чуть ниже ног врага
+        
+        let groundAhead = false;
+        
+        // Проверяем есть ли платформа впереди
+        platforms.forEach(plat => {
+            const aheadX = enemy.dir > 0 ? enemy.x + enemy.w + checkDistance : enemy.x - checkDistance;
+            
+            if (aheadX >= plat.x && aheadX <= plat.x + plat.w &&
+                checkY >= plat.y && checkY <= plat.y + plat.h) {
+                groundAhead = true;
             }
         });
+        
+        return groundAhead;
+    }
+
+    function updateEnemyAI(enemy, platforms) {
+        // 1. Проверяем край платформы
+        if (!checkEdgeAhead(enemy, platforms)) {
+            enemy.dir *= -1; // Разворот если обрыв
+            return;
+        }
+        
+        // 2. Проверяем границы патрулирования
+        const plat = platforms[enemy.platformIndex];
+        if (plat) {
+            if (enemy.x <= plat.x + 5) {
+                enemy.dir = 1;
+            } else if (enemy.x + enemy.w >= plat.x + plat.w - 5) {
+                enemy.dir = -1;
+            }
+        }
     }
 
     function update() {
         if (!isGameRunning) return;
 
-        // --- Игрок ---
+        // === ИГРОК ===
         if (keys.right) { player.vx = player.speed; player.facingRight = true; }
         else if (keys.left) { player.vx = -player.speed; player.facingRight = false; }
         else { player.vx = 0; }
@@ -356,29 +375,21 @@
             playSound('jump');
         }
 
-        if (keys.attack) attack();
+        if (keys.throw) throwProjectile();
 
-        // Физика игрока
-        player.vy += 0.7; // Гравитация
+        player.vy += 0.7;
         player.x += player.vx;
         player.y += player.vy;
 
-        // Таймеры атаки
-        if (player.isAttacking) {
-            player.attackTimer--;
-            if (player.attackTimer <= 0) player.isAttacking = false;
-        }
-        if (player.attackCooldown > 0) player.attackCooldown--;
+        if (player.throwCooldown > 0) player.throwCooldown--;
         if (player.invincible > 0) player.invincible--;
 
-        // Границы мира
         if (player.x < 0) player.x = 0;
         if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
         if (player.y > canvas.height) {
             playerDie();
         }
 
-        // Коллизия с платформами
         player.grounded = false;
         levelData.platforms.forEach(plat => {
             if (player.x < plat.x + plat.w && player.x + player.w > plat.x &&
@@ -392,35 +403,60 @@
             }
         });
 
-        // --- Враги ---
+        // === СНАРЯДЫ ===
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            let proj = projectiles[i];
+            proj.x += proj.vx;
+            proj.y += proj.vy;
+            proj.life--;
+
+            if (proj.life <= 0 || proj.x < 0 || proj.x > canvas.width) {
+                projectiles.splice(i, 1);
+                continue;
+            }
+
+            levelData.enemies.forEach(enemy => {
+                if (enemy.hp <= 0 || enemy.respawnInvincible > 0) return;
+
+                if (proj.x < enemy.x + enemy.w && proj.x + proj.w > enemy.x &&
+                    proj.y < enemy.y + enemy.h && proj.y + proj.h > enemy.y) {
+                    
+                    enemy.hp--;
+                    enemy.x += proj.vx > 0 ? 20 : -20;
+                    createParticles(enemy.x + enemy.w/2, enemy.y + enemy.h/2, '#00ffff', 8);
+                    playSound('hit');
+                    
+                    projectiles.splice(i, 1);
+                    
+                    if (enemy.hp <= 0) {
+                        createParticles(enemy.x, enemy.y, '#ffffff', 30, 8);
+                        playSound('win');
+                    }
+                    updateUI();
+                }
+            });
+        }
+
+        // === ВРАГИ С УМНЫМ ИИ ===
         levelData.enemies.forEach(enemy => {
             if (enemy.hp <= 0) return;
 
-            // ИИ Врага
-            const distToPlayer = Math.abs((player.x + player.w/2) - (enemy.x + enemy.w/2));
-            const isPlayerClose = distToPlayer < 400; // Радиус агро
-
-            if (enemy.type === 'chase' || (enemy.type === 'boss' && isPlayerClose)) {
-                // Преследование
-                if (player.x > enemy.x) enemy.x += enemy.speed;
-                else enemy.x -= enemy.speed;
-                
-                // Прыжки за игроком (простой ИИ)
-                if (player.y < enemy.y - 50 && enemy.grounded) {
-                     // enemy.vy = -10; // Можно добавить прыжки врагам
-                }
-            } else if (enemy.type === 'patrol') {
-                // Патруль
-                enemy.x += enemy.speed * enemy.dir;
-                if (enemy.x > enemy.range[1] || enemy.x < enemy.range[0]) enemy.dir *= -1;
+            if (enemy.respawnInvincible > 0) {
+                enemy.respawnInvincible--;
             }
 
-            // Гравитация врага
+            // УМНЫЙ ИИ: проверка края перед движением
+            updateEnemyAI(enemy, levelData.platforms);
+
+            // Движение
+            enemy.x += enemy.speed * enemy.dir;
+
+            // Гравитация
             enemy.vy = (enemy.vy || 0) + 0.7;
             enemy.y += enemy.vy;
             enemy.grounded = false;
 
-            // Коллизия врага с платформами
+            // Коллизия с платформами
             levelData.platforms.forEach(plat => {
                 if (enemy.x < plat.x + plat.w && enemy.x + enemy.w > plat.x &&
                     enemy.y < plat.y + plat.h && enemy.y + enemy.h > plat.y) {
@@ -432,8 +468,19 @@
                 }
             });
 
-            // Столкновение Враг -> Игрок (Урон игроку)
-            if (player.x < enemy.x + enemy.w && player.x + player.w > enemy.x &&
+            // Респавн (запасной вариант)
+            if (enemy.y > canvas.height + 50) {
+                enemy.x = enemy.startX;
+                enemy.y = enemy.startY;
+                enemy.vy = 0;
+                enemy.respawnInvincible = 120;
+                playSound('respawn');
+                createParticles(enemy.x, enemy.y, '#ffff00', 15);
+            }
+
+            // Столкновение с игроком
+            if (enemy.respawnInvincible <= 0 &&
+                player.x < enemy.x + enemy.w && player.x + player.w > enemy.x &&
                 player.y < enemy.y + enemy.h && player.y + player.h > enemy.y) {
                 
                 if (player.invincible <= 0) {
@@ -442,21 +489,16 @@
             }
         });
 
-        // Финиш
+        // === ФИНИШ ===
         const f = levelData.finish;
         const aliveEnemies = levelData.enemies.filter(e => e.hp > 0).length;
         
-        // Можно пройти уровень только если все враги биты (опционально, сейчас можно всегда)
         if (player.x < f.x + f.w && player.x + player.w > f.x &&
             player.y < f.y + f.h && player.y + player.h > f.y) {
             
             if (aliveEnemies === 0) {
                 playSound('win');
                 initLevel(currentLevelIdx + 1);
-            } else {
-                // Подсказка если враги остались
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-                ctx.fillRect(f.x, f.y, f.w, f.h);
             }
         }
 
@@ -464,7 +506,7 @@
         particles.forEach((p, i) => {
             p.x += p.vx;
             p.y += p.vy;
-            p.vy += 0.2; // Гравитация частиц
+            p.vy += 0.2;
             p.life -= 0.05;
             if (p.life <= 0) particles.splice(i, 1);
         });
@@ -475,16 +517,16 @@
     function playerDie() {
         playSound('hit');
         player.lives--;
-        player.invincible = 60; // 1 секунда неуязвимости
+        player.invincible = 60;
         createParticles(player.x, player.y, '#ff00ff', 20);
         
         if (player.lives <= 0) {
             gameOver();
         } else {
-            // Респавн на старте уровня
             player.x = levelData.start.x;
             player.y = levelData.start.y;
             player.vy = 0;
+            projectiles = [];
         }
         updateUI();
     }
@@ -511,6 +553,17 @@
         ctx.font = '12px Arial';
         ctx.fillText("EXIT", f.x + 15, f.y + 30);
 
+        // Снаряды
+        projectiles.forEach(proj => {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.beginPath();
+            ctx.arc(proj.x + proj.w/2, proj.y + proj.h/2, proj.w/2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
         // Враги
         levelData.enemies.forEach(enemy => {
             if (enemy.hp <= 0) return;
@@ -531,23 +584,18 @@
 
     function drawMorgen(p) {
         ctx.save();
-        // Мигание при уроне
         if (p.invincible > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
             ctx.globalAlpha = 0.5;
         }
 
         const cx = p.x + p.w/2;
-        const cy = p.y + p.h/2;
 
-        // Тело
         ctx.fillStyle = p.color;
         ctx.fillRect(p.x, p.y, p.w, p.h);
         
-        // Лицо
         ctx.fillStyle = '#ffe0bd';
         ctx.fillRect(p.x + 5, p.y + 10, p.w - 10, 25);
 
-        // Прическа
         ctx.fillStyle = '#aa00aa';
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
@@ -555,7 +603,6 @@
         ctx.lineTo(p.x + p.w, p.y);
         ctx.fill();
 
-        // Брекеты
         ctx.fillStyle = 'white';
         ctx.fillRect(p.x + 8, p.y + 25, p.w - 16, 8);
         ctx.strokeStyle = 'silver';
@@ -564,7 +611,6 @@
         ctx.lineTo(p.x + p.w - 8, p.y + 33);
         ctx.stroke();
 
-        // Очки
         ctx.fillStyle = 'black';
         if (p.facingRight) {
             ctx.fillRect(p.x + 20, p.y + 15, 15, 6);
@@ -572,21 +618,11 @@
             ctx.fillRect(p.x + 5, p.y + 15, 15, 6);
         }
 
-        // Атака (Визуальный эффект)
-        if (p.isAttacking) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            const atkX = p.facingRight ? p.x + p.w : p.x - 50;
-            ctx.beginPath();
-            ctx.arc(atkX + (p.facingRight?25:-25), p.y + p.h/2, 30, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Линия удара
-            ctx.strokeStyle = '#00ffff';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(p.facingRight ? p.x + p.w : p.x, p.y + p.h/2);
-            ctx.lineTo(atkX + (p.facingRight?50:-50), p.y + p.h/2);
-            ctx.stroke();
+        if (p.throwCooldown > 0) {
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.fillRect(p.x, p.y - 15, p.w, 5);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(p.x, p.y - 15, p.w * (1 - p.throwCooldown/15), 5);
         }
 
         ctx.restore();
@@ -595,15 +631,17 @@
     function drawSlava(e) {
         const cx = e.x + e.w/2;
         
-        // Тело (Красное)
+        ctx.save();
+        if (e.respawnInvincible > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+            ctx.globalAlpha = 0.4;
+        }
+
         ctx.fillStyle = '#cc0000';
         ctx.fillRect(e.x, e.y, e.w, e.h);
 
-        // Лицо
         ctx.fillStyle = '#ffe0bd';
         ctx.fillRect(e.x + 5, e.y + 5, e.w - 10, 25);
 
-        // Борода
         ctx.fillStyle = '#331100';
         ctx.beginPath();
         ctx.moveTo(e.x, e.y + 20);
@@ -611,7 +649,6 @@
         ctx.lineTo(e.x + e.w, e.y + 20);
         ctx.fill();
 
-        // Злые глаза
         ctx.fillStyle = 'white';
         ctx.beginPath();
         ctx.moveTo(e.x + 10, e.y + 15);
@@ -625,19 +662,19 @@
         ctx.lineTo(e.x + e.w - 18, e.y + 18);
         ctx.fill();
 
-        // Полоска здоровья
         const hpPercent = e.hp / e.maxHp;
         ctx.fillStyle = 'red';
         ctx.fillRect(e.x, e.y - 10, e.w, 5);
         ctx.fillStyle = '#00ff00';
         ctx.fillRect(e.x, e.y - 10, e.w * hpPercent, 5);
         
-        // Если босс - надпись
         if (e.type === 'boss') {
             ctx.fillStyle = 'yellow';
             ctx.font = 'bold 14px Arial';
-            ctx.fillText("BOSS SLAVA", e.x - 10, e.y - 15);
+            ctx.fillText("BOSS", e.x + 5, e.y - 15);
         }
+
+        ctx.restore();
     }
 
     function gameOver() {
@@ -666,30 +703,27 @@
         }
     }
 
-    // Управление
     document.addEventListener('keydown', (e) => {
         if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
         if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = true;
-        if (e.code === 'KeyF') keys.attack = true;
+        if (e.code === 'KeyF') keys.throw = true;
     });
 
     document.addEventListener('keyup', (e) => {
         if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
         if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = false;
-        if (e.code === 'KeyF') keys.attack = false;
+        if (e.code === 'KeyF') keys.throw = false;
     });
 
-    // Атака мышкой
     canvas.addEventListener('mousedown', () => {
-        if(isGameRunning) keys.attack = true;
+        if(isGameRunning) keys.throw = true;
     });
     canvas.addEventListener('mouseup', () => {
-        keys.attack = false;
+        keys.throw = false;
     });
 
-    // Старт
     overlay.classList.remove('hidden');
 
 </script>
