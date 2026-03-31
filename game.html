@@ -2,69 +2,84 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Morgenshtern Parkour: Escape from Slava</title>
+    <title>Morgenshtern Parkour: The Trilogy</title>
     <style>
         body {
             margin: 0;
-            background-color: #222;
+            background-color: #111;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            font-family: Arial, sans-serif;
+            font-family: 'Courier New', Courier, monospace;
             color: white;
             overflow: hidden;
         }
         #gameContainer {
             position: relative;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            box-shadow: 0 0 50px rgba(255, 0, 255, 0.3);
+            border: 2px solid #333;
         }
         canvas {
-            background-color: #333;
-            border: 4px solid #ff00ff; /* Фирменный розовый цвет */
+            background: linear-gradient(180deg, #1a0b2e 0%, #000000 100%);
+            display: block;
         }
         #ui {
             position: absolute;
             top: 10px;
             left: 10px;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
-            text-shadow: 2px 2px 0 #000;
+            text-shadow: 2px 2px 0 #ff00ff;
+            pointer-events: none;
         }
-        #winScreen {
+        #overlay {
             display: none;
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            padding: 20px;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             text-align: center;
-            border: 2px solid white;
         }
+        h1 { margin: 0 0 20px 0; color: #ff00ff; text-transform: uppercase; font-style: italic; }
+        p { font-size: 18px; max-width: 400px; line-height: 1.5; }
         button {
             background: #ff00ff;
-            border: none;
-            padding: 10px 20px;
+            border: 2px solid white;
+            padding: 15px 30px;
             color: white;
-            font-size: 18px;
+            font-size: 20px;
+            font-weight: bold;
             cursor: pointer;
-            margin-top: 10px;
+            transition: 0.2s;
+            text-transform: uppercase;
+            font-family: inherit;
         }
         button:hover {
-            background: #d400d4;
+            background: white;
+            color: #ff00ff;
+            box-shadow: 0 0 20px #ff00ff;
+        }
+        .controls-hint {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
         }
     </style>
 </head>
 <body>
 
 <div id="gameContainer">
-    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
     <div id="ui">Уровень: 1 | Жизни: 3</div>
-    <div id="winScreen">
-        <h1>ТЫ ПОБЕДИЛ!</h1>
-        <p>Слава Марлоу повержен.</p>
-        <button onclick="location.reload()">Играть снова</button>
+    
+    <div id="overlay">
+        <h1 id="overlayTitle">MORGENSTERN PARKOUR</h1>
+        <p id="overlayText">Избегай Славу Марлоу и не падай в кислоту!</p>
+        <button id="startBtn" onclick="startGame()">НАЧАТЬ ТУСОВКУ</button>
+        <div class="controls-hint">Управление: Стрелки / WASD / Пробел</div>
     </div>
 </div>
 
@@ -72,60 +87,347 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const ui = document.getElementById('ui');
-    const winScreen = document.getElementById('winScreen');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlayText = document.getElementById('overlayText');
+    const startBtn = document.getElementById('startBtn');
 
-    // Настройки игры
-    const GRAVITY = 0.5;
-    const SPEED = 5;
-    const JUMP_FORCE = -10;
+    // Аудио контекст для звуков
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
 
-    // Игрок (Моргенштерн)
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        if (type === 'jump') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'hit') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+            gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        } else if (type === 'win') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.2);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+        }
+    }
+
+    // Игровые переменные
+    let currentLevel = 0;
+    let isGameRunning = false;
+    let particles = [];
+
     const player = {
-        x: 50,
-        y: 200,
-        width: 30,
-        height: 50,
-        dx: 0,
-        dy: 0,
-        grounded: false,
-        color: '#ff00ff', // Розовый цвет (стиль Алишера)
-        lives: 3
+        x: 50, y: 200, w: 30, h: 45,
+        dx: 0, dy: 0, speed: 5, jump: -11,
+        grounded: false, lives: 3, color: '#ff00ff'
     };
 
-    // Управление
-    const keys = {
-        right: false,
-        left: false,
-        up: false
-    };
+    const keys = { right: false, left: false, up: false };
 
-    // Уровень (Платформы)
-    // x, y - координаты, w, h - размеры
-    const platforms = [
-        {x: 0, y: 350, w: 800, h: 50},   // Пол
-        {x: 200, y: 280, w: 100, h: 20},
-        {x: 400, y: 220, w: 100, h: 20},
-        {x: 600, y: 150, w: 150, h: 20},
-        {x: 50, y: 150, w: 100, h: 20}
+    // Данные уровней
+    const levels = [
+        { // Уровень 1: Обучение
+            platforms: [
+                {x: 0, y: 450, w: 800, h: 50}, // Пол
+                {x: 200, y: 350, w: 150, h: 20},
+                {x: 450, y: 250, w: 150, h: 20},
+                {x: 100, y: 150, w: 100, h: 20}
+            ],
+            enemies: [
+                {x: 300, y: 420, w: 30, h: 30, speed: 2, range: [250, 500], color: '#ff4444'}
+            ],
+            finish: {x: 700, y: 400, w: 50, h: 50},
+            start: {x: 50, y: 400}
+        },
+        { // Уровень 2: Прыжки
+            platforms: [
+                {x: 0, y: 450, w: 200, h: 50},
+                {x: 250, y: 380, w: 80, h: 20},
+                {x: 400, y: 300, w: 80, h: 20},
+                {x: 550, y: 220, w: 80, h: 20},
+                {x: 700, y: 150, w: 100, h: 20}
+            ],
+            enemies: [
+                {x: 400, y: 270, w: 30, h: 30, speed: 3, range: [400, 480], color: '#ff4444'},
+                {x: 550, y: 190, w: 30, h: 30, speed: 4, range: [550, 630], color: '#ff4444'}
+            ],
+            finish: {x: 720, y: 100, w: 50, h: 50},
+            start: {x: 50, y: 400}
+        },
+        { // Уровень 3: Адский паркур
+            platforms: [
+                {x: 0, y: 450, w: 100, h: 50},
+                {x: 150, y: 400, w: 50, h: 20},
+                {x: 300, y: 350, w: 50, h: 20},
+                {x: 450, y: 250, w: 100, h: 20},
+                {x: 650, y: 150, w: 50, h: 20},
+                {x: 200, y: 150, w: 100, h: 20} // Обратный путь
+            ],
+            enemies: [
+                {x: 450, y: 220, w: 30, h: 30, speed: 5, range: [450, 550], color: '#ff0000'},
+                {x: 200, y: 120, w: 30, h: 30, speed: 6, range: [200, 300], color: '#ff0000'}
+            ],
+            finish: {x: 50, y: 100, w: 50, h: 50},
+            start: {x: 20, y: 400}
+        }
     ];
 
-    // Враги (Слава Марлоу)
-    // Они двигаются влево-вправо
-    const enemies = [
-        {x: 300, y: 320, w: 30, h: 30, speed: 2, dir: 1, rangeStart: 250, rangeEnd: 500, color: '#ff0000'}, // Красный (опасный)
-        {x: 620, y: 120, w: 30, h: 30, speed: 3, dir: -1, rangeStart: 600, rangeEnd: 750, color: '#ff0000'}
-    ];
+    let currentLevelData = null;
 
-    // Финиш
-    const finishLine = {x: 720, y: 110, w: 40, h: 40, color: '#00ff00'};
+    function initLevel(lvlIndex) {
+        if (lvlIndex >= levels.length) {
+            gameWin();
+            return;
+        }
+        currentLevel = lvlIndex;
+        currentLevelData = JSON.parse(JSON.stringify(levels[lvlIndex])); // Копия данных
+        player.x = currentLevelData.start.x;
+        player.y = currentLevelData.start.y;
+        player.dx = 0;
+        player.dy = 0;
+        ui.innerText = `Уровень: ${currentLevel + 1} | Жизни: ${player.lives}`;
+    }
 
-    // Слушатели нажатий
+    function startGame() {
+        overlay.style.display = 'none';
+        player.lives = 3;
+        isGameRunning = true;
+        initLevel(0);
+        gameLoop();
+    }
+
+    function resetPlayer() {
+        playSound('hit');
+        player.lives--;
+        ui.innerText = `Уровень: ${currentLevel + 1} | Жизни: ${player.lives}`;
+        createParticles(player.x, player.y, '#ff0000', 20);
+        
+        if (player.lives <= 0) {
+            gameOver();
+        } else {
+            player.x = currentLevelData.start.x;
+            player.y = currentLevelData.start.y;
+            player.dy = 0;
+        }
+    }
+
+    function createParticles(x, y, color, count) {
+        for(let i=0; i<count; i++) {
+            particles.push({
+                x: x, y: y,
+                dx: (Math.random() - 0.5) * 10,
+                dy: (Math.random() - 0.5) * 10,
+                life: 1.0,
+                color: color
+            });
+        }
+    }
+
+    function update() {
+        if (!isGameRunning) return;
+
+        // Движение
+        if (keys.right) player.dx = player.speed;
+        else if (keys.left) player.dx = -player.speed;
+        else player.dx = 0;
+
+        player.dy += 0.6; // Гравитация
+        player.x += player.dx;
+        player.y += player.dy;
+
+        // Границы
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+        // Лава (смерть при падении)
+        if (player.y > canvas.height) {
+            resetPlayer();
+        }
+
+        // Коллизия с платформами
+        player.grounded = false;
+        currentLevelData.platforms.forEach(plat => {
+            if (player.x < plat.x + plat.w &&
+                player.x + player.w > plat.x &&
+                player.y < plat.y + plat.h &&
+                player.y + player.h > plat.y) {
+                
+                if (player.dy > 0 && player.y + player.h - player.dy <= plat.y) {
+                    player.grounded = true;
+                    player.dy = 0;
+                    player.y = plat.y - player.h;
+                }
+            }
+        });
+
+        // Враги
+        currentLevelData.enemies.forEach(enemy => {
+            enemy.x += enemy.speed * enemy.dir;
+            if (enemy.x > enemy.range[1] || enemy.x < enemy.range[0]) enemy.dir *= -1;
+
+            // Простая коллизия прямоугольников
+            if (player.x < enemy.x + enemy.w &&
+                player.x + player.w > enemy.x &&
+                player.y < enemy.y + enemy.h &&
+                player.y + player.h > enemy.y) {
+                resetPlayer();
+            }
+        });
+
+        // Финиш
+        const f = currentLevelData.finish;
+        if (player.x < f.x + f.w && player.x + player.w > f.x &&
+            player.y < f.y + f.h && player.y + player.h > f.y) {
+            playSound('win');
+            initLevel(currentLevel + 1);
+        }
+
+        // Частицы
+        particles.forEach((p, index) => {
+            p.x += p.dx;
+            p.y += p.dy;
+            p.life -= 0.05;
+            if(p.life <= 0) particles.splice(index, 1);
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Рисуем платформы
+        ctx.fillStyle = '#444';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00ffff';
+        currentLevelData.platforms.forEach(plat => {
+            ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+            // Декор платформы
+            ctx.fillStyle = '#222';
+            ctx.fillRect(plat.x + 5, plat.y + 5, plat.w - 10, plat.h - 10);
+            ctx.fillStyle = '#444';
+        });
+        ctx.shadowBlur = 0;
+
+        // Рисуем финиш (Портал)
+        const f = currentLevelData.finish;
+        ctx.fillStyle = `rgba(0, 255, 0, ${0.5 + Math.sin(Date.now()/200)*0.2})`;
+        ctx.fillRect(f.x, f.y, f.w, f.h);
+        ctx.strokeStyle = '#00ff00';
+        ctx.strokeRect(f.x, f.y, f.w, f.h);
+
+        // Рисуем врагов (Слава Марлоу)
+        currentLevelData.enemies.forEach(enemy => {
+            drawSlava(enemy.x, enemy.y, enemy.w, enemy.h);
+        });
+
+        // Рисуем игрока (Моргенштерн)
+        drawMorgen(player.x, player.y, player.w, player.h);
+
+        // Рисуем частицы
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.fillRect(p.x, p.y, 4, 4);
+            ctx.globalAlpha = 1.0;
+        });
+    }
+
+    // --- Функции отрисовки персонажей (Процедурная графика) ---
+
+    function drawMorgen(x, y, w, h) {
+        // Тело
+        ctx.fillStyle = '#ff00ff';
+        ctx.fillRect(x, y, w, h);
+        
+        // Лицо
+        ctx.fillStyle = '#ffe0bd'; // Цвет кожи
+        ctx.fillRect(x + 5, y + 5, w - 10, 20);
+
+        // Прическа (ирокез/дреды)
+        ctx.fillStyle = '#880088';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + w/2, y - 15);
+        ctx.lineTo(x + w, y);
+        ctx.fill();
+
+        // Брекеты (зубы)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(x + 8, y + 18, w - 16, 6);
+        ctx.strokeStyle = 'silver';
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 18);
+        ctx.lineTo(x + w - 8, y + 24);
+        ctx.stroke();
+
+        // Глаза (солнцезащитные очки схематично)
+        ctx.fillStyle = 'black';
+        ctx.fillRect(x + 6, y + 10, 7, 4);
+        ctx.fillRect(x + 17, y + 10, 7, 4);
+        ctx.fillRect(x + 13, y + 11, 4, 2); // Перемычка
+    }
+
+    function drawSlava(x, y, w, h) {
+        // Тело (Красное, злое)
+        ctx.fillStyle = '#cc0000';
+        ctx.fillRect(x, y, w, h);
+
+        // Лицо
+        ctx.fillStyle = '#ffe0bd';
+        ctx.fillRect(x + 5, y + 5, w - 10, 20);
+
+        // Борода
+        ctx.fillStyle = '#331100';
+        ctx.beginPath();
+        ctx.moveTo(x, y + 15);
+        ctx.lineTo(x + w/2, y + h - 5);
+        ctx.lineTo(x + w, y + 15);
+        ctx.fill();
+
+        // Злые глаза
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 12);
+        ctx.lineTo(x + 12, y + 10);
+        ctx.lineTo(x + 12, y + 14);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(x + 22, y + 12);
+        ctx.lineTo(x + 18, y + 10);
+        ctx.lineTo(x + 18, y + 14);
+        ctx.fill();
+    }
+
+    // --- Управление ---
     document.addEventListener('keydown', (e) => {
         if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
-        if ((e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.grounded) {
-            player.dy = JUMP_FORCE;
-            player.grounded = false;
+        if ((e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space')) {
+            if (player.grounded) {
+                player.dy = player.jump;
+                player.grounded = false;
+                playSound('jump');
+            }
         }
     });
 
@@ -134,130 +436,34 @@
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
     });
 
-    function update() {
-        // Движение игрока
-        if (keys.right) player.dx = SPEED;
-        else if (keys.left) player.dx = -SPEED;
-        else player.dx = 0;
-
-        player.dy += GRAVITY;
-        player.x += player.dx;
-        player.y += player.dy;
-
-        // Границы экрана
-        if (player.x < 0) player.x = 0;
-        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-
-        // Коллизия с платформами
-        player.grounded = false;
-        platforms.forEach(plat => {
-            if (player.x < plat.x + plat.w &&
-                player.x + player.width > plat.x &&
-                player.y < plat.y + plat.h &&
-                player.y + player.height > plat.y) {
-                
-                // Если падаем вниз и касаемся платформы
-                if (player.dy > 0 && player.y + player.height - player.dy <= plat.y) {
-                    player.grounded = true;
-                    player.dy = 0;
-                    player.y = plat.y - player.height;
-                }
-            }
-        });
-
-        // Логика врагов (Слава Марлоу)
-        enemies.forEach(enemy => {
-            enemy.x += enemy.speed * enemy.dir;
-            
-            // Патрулирование
-            if (enemy.x > enemy.rangeEnd || enemy.x < enemy.rangeStart) {
-                enemy.dir *= -1;
-            }
-
-            // Столкновение с врагом
-            if (player.x < enemy.x + enemy.w &&
-                player.x + player.width > enemy.x &&
-                player.y < enemy.y + enemy.h &&
-                player.y + player.height > enemy.y) {
-                
-                player.lives--;
-                resetPosition();
-            }
-        });
-
-        // Финиш
-        if (player.x < finishLine.x + finishLine.w &&
-            player.x + player.width > finishLine.x &&
-            player.y < finishLine.y + finishLine.h &&
-            player.y + player.height > finishLine.y) {
-            
-            winScreen.style.display = 'block';
-        }
-
-        // Обновление интерфейса
-        ui.innerText = `Уровень: 1 | Жизни: ${player.lives}`;
-        
-        if (player.lives <= 0) {
-            alert("Ты проиграл! Слава Марлоу победил.");
-            location.reload();
-        }
+    function gameOver() {
+        isGameRunning = false;
+        overlayTitle.innerText = "GAME OVER";
+        overlayTitle.style.color = "red";
+        overlayText.innerText = "Слава Марлоу оказался сильнее...";
+        startBtn.innerText = "ПОПРОБОВАТЬ СНОВА";
+        overlay.style.display = 'flex';
     }
 
-    function resetPosition() {
-        player.x = 50;
-        player.y = 200;
-        player.dy = 0;
-    }
-
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Рисуем платформы
-        ctx.fillStyle = '#888';
-        platforms.forEach(plat => {
-            ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-        });
-
-        // Рисуем Финиш
-        ctx.fillStyle = finishLine.color;
-        ctx.fillRect(finishLine.x, finishLine.y, finishLine.w, finishLine.h);
-        ctx.fillStyle = 'white';
-        ctx.font = '10px Arial';
-        ctx.fillText("EXIT", finishLine.x + 5, finishLine.y + 25);
-
-        // Рисуем Врагов (Слава Марлоу)
-        enemies.forEach(enemy => {
-            ctx.fillStyle = enemy.color;
-            ctx.fillRect(enemy.x, enemy.y, enemy.w, enemy.h);
-            // Глаза (для стиля)
-            ctx.fillStyle = 'black';
-            ctx.fillRect(enemy.x + 5, enemy.y + 5, 5, 5);
-            ctx.fillRect(enemy.x + 20, enemy.y + 5, 5, 5);
-        });
-
-        // Рисуем Игрока (Моргенштерн)
-        ctx.fillStyle = player.color;
-        ctx.fillRect(player.x, player.y, player.width, player.height);
-        
-        // Рисуем "Брекеты" (схематично)
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(player.x, player.y, player.width, player.height);
-        
-        // Лицо
-        ctx.fillStyle = 'white';
-        ctx.fillRect(player.x + 5, player.y + 10, 8, 8); // Левый глаз
-        ctx.fillRect(player.x + 17, player.y + 10, 8, 8); // Правый глаз
+    function gameWin() {
+        isGameRunning = false;
+        overlayTitle.innerText = "ПОБЕДА!";
+        overlayTitle.style.color = "#00ff00";
+        overlayText.innerText = "Ты прошел все уровни и стал королем хип-хопа!";
+        startBtn.innerText = "ИГРАТЬ ЕЩЕ РАЗ";
+        overlay.style.display = 'flex';
     }
 
     function gameLoop() {
-        update();
-        draw();
-        requestAnimationFrame(gameLoop);
+        if (isGameRunning) {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
     }
 
-    // Старт игры
-    gameLoop();
+    // Показываем меню при старте
+    overlay.style.display = 'flex';
 
 </script>
 
