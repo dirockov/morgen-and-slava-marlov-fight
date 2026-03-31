@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Morgenshtern: Double Jump</title>
+    <title>Morgenshtern: Boss Battle</title>
     <style>
         body {
             margin: 0;
@@ -32,6 +32,34 @@
             text-shadow: 2px 2px 0 #000;
             pointer-events: none;
             z-index: 10;
+        }
+        #bossHealth {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            height: 25px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #ff0000;
+            border-radius: 5px;
+            display: none;
+            z-index: 10;
+        }
+        #bossHealthBar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ff6600);
+            transition: width 0.3s;
+        }
+        #bossHealthText {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #000;
         }
         #overlay {
             display: flex;
@@ -86,6 +114,18 @@
             box-shadow: 0 0 40px rgba(255, 0, 204, 0.8);
         }
         .hidden { display: none !important; }
+        .phase-indicator {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff0000;
+            text-shadow: 0 0 20px #ff0000;
+            display: none;
+            z-index: 10;
+        }
     </style>
 </head>
 
@@ -98,16 +138,22 @@
         ЖИЗНИ: <span id="livesDisplay">3</span> | 
         ВРАГОВ: <span id="enemiesDisplay">0</span>
     </div>
+    <div id="bossHealth">
+        <div id="bossHealthBar"></div>
+        <div id="bossHealthText">BOSS SLAVA</div>
+    </div>
+    <div id="phaseIndicator" class="phase-indicator">⚠️ ФАЗА 2 ⚠️</div>
     
     <div id="overlay">
         <h1 id="overlayTitle">MORGENSTERN BATTLE</h1>
-        <p id="overlayText">Победи всех Слав Марлоу метательными звёздами!</p>
+        <p id="overlayText">Победи всех Слав Марлоу и УНИЧТОЖЬ БОССА!</p>
         
         <div class="controls">
             <div>Движение: <span class="key">A</span> <span class="key">D</span> или <span class="key">←</span> <span class="key">→</span></div>
             <div>Прыжок: <span class="key">W</span> или <span class="key">↑</span> или <span class="key">SPACE</span></div>
             <div style="margin-top:10px; color: #00ffff;">БРОСОК: <span class="key">F</span> или <span class="key">ЛКМ</span></div>
             <div style="margin-top:10px; color: #ffff00;">⭐ ДВОЙНОЙ ПРЫЖОК: прыгни ещё раз в воздухе!</div>
+            <div style="margin-top:10px; color: #ff0000;">⚔️ БОСС: Атакует и меняет фазы!</div>
         </div>
 
         <button id="startBtn" onclick="startGame()">В БОЙ!</button>
@@ -125,6 +171,10 @@
     const overlayTitle = document.getElementById('overlayTitle');
     const overlayText = document.getElementById('overlayText');
     const startBtn = document.getElementById('startBtn');
+    const bossHealth = document.getElementById('bossHealth');
+    const bossHealthBar = document.getElementById('bossHealthBar');
+    const bossHealthText = document.getElementById('bossHealthText');
+    const phaseIndicator = document.getElementById('phaseIndicator');
 
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     const audioCtx = new AudioContext();
@@ -166,6 +216,28 @@
             gain.gain.setValueAtTime(0.1, now);
             gain.gain.linearRampToValueAtTime(0, now + 0.15);
             osc.start(now); osc.stop(now + 0.15);
+        } else if (type === 'bossThrow') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.3);
+            osc.start(now); osc.stop(now + 0.3);
+        } else if (type === 'bossDash') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.linearRampToValueAtTime(300, now + 0.2);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc.start(now); osc.stop(now + 0.2);
+        } else if (type === 'phaseChange') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.setValueAtTime(500, now + 0.3);
+            osc.frequency.setValueAtTime(800, now + 0.6);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0, now + 1.0);
+            osc.start(now); osc.stop(now + 1.0);
         } else if (type === 'win') {
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(400, now);
@@ -181,6 +253,13 @@
             gain.gain.setValueAtTime(0.15, now);
             gain.gain.linearRampToValueAtTime(0, now + 0.3);
             osc.start(now); osc.stop(now + 0.3);
+        } else if (type === 'warning') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.linearRampToValueAtTime(600, now + 0.5);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.5);
+            osc.start(now); osc.stop(now + 0.5);
         }
     }
 
@@ -195,10 +274,11 @@
         color: '#ff00ff',
         invincible: 0,
         jumpCount: 0,
-        maxJumps: 2  // ДВОЙНОЙ ПРЫЖОК!
+        maxJumps: 2
     };
 
     let projectiles = [];
+    let bossProjectiles = [];
     const keys = { right: false, left: false, up: false, throw: false };
     let particles = [];
     let currentLevelIdx = 0;
@@ -259,7 +339,9 @@
                 {x: 400, y: 300, w: 100, h: 20}
             ],
             enemies: [
-                {x: 400, y: 490, w: 60, h: 60, hp: 8, maxHp: 8, speed: 1.5, type: 'boss', dir: 1, vy: 0, grounded: false, startX: 400, startY: 490, respawnInvincible: 0, platformIndex: 0}
+                {x: 400, y: 490, w: 60, h: 60, hp: 15, maxHp: 15, speed: 2, type: 'boss', dir: 1, vy: 0, grounded: false, 
+                 startX: 400, startY: 490, respawnInvincible: 0, platformIndex: 0,
+                 attackCooldown: 0, dashCooldown: 0, phase: 1, attackWarning: 0}
             ],
             finish: {x: 800, y: 500, w: 60, h: 50},
             start: {x: 50, y: 480}
@@ -283,9 +365,19 @@
         player.jumpCount = 0;
         
         projectiles = [];
+        bossProjectiles = [];
         particles = [];
         
+        // Показываем полоску здоровья босса только на 4 уровне
+        if (currentLevelIdx === 3) {
+            bossHealth.style.display = 'block';
+        } else {
+            bossHealth.style.display = 'none';
+            phaseIndicator.style.display = 'none';
+        }
+        
         updateUI();
+        updateBossHealthUI();
     }
 
     function startGame() {
@@ -301,6 +393,25 @@
         uiLives.innerText = player.lives;
         const aliveEnemies = levelData.enemies.filter(e => e.hp > 0).length;
         uiEnemies.innerText = aliveEnemies;
+    }
+
+    function updateBossHealthUI() {
+        if (currentLevelIdx === 3) {
+            const boss = levelData.enemies.find(e => e.type === 'boss' && e.hp > 0);
+            if (boss) {
+                const percent = (boss.hp / boss.maxHp) * 100;
+                bossHealthBar.style.width = percent + '%';
+                
+                // Цвет меняется от фазы
+                if (percent > 70) {
+                    bossHealthBar.style.background = 'linear-gradient(90deg, #ff0000, #ff6600)';
+                } else if (percent > 40) {
+                    bossHealthBar.style.background = 'linear-gradient(90deg, #ff6600, #ffff00)';
+                } else {
+                    bossHealthBar.style.background = 'linear-gradient(90deg, #ff0000, #ff00ff)';
+                }
+            }
+        }
     }
 
     function createParticles(x, y, color, count, speed = 5) {
@@ -322,7 +433,6 @@
             player.jumpCount++;
             player.grounded = false;
             
-            // Разный звук для первого и двойного прыжка
             if (player.jumpCount === 1) {
                 playSound('jump');
                 createParticles(player.x + player.w/2, player.y + player.h, '#ff00ff', 5, 3);
@@ -347,6 +457,102 @@
             w: 15,
             h: 15,
             life: 150
+        });
+    }
+
+    // === УМНЫЙ ИИ БОССА ===
+    function updateBossAI(boss, platforms) {
+        // Определение фазы по здоровью
+        const hpPercent = boss.hp / boss.maxHp;
+        let newPhase = 1;
+        if (hpPercent <= 0.4) newPhase = 3;
+        else if (hpPercent <= 0.7) newPhase = 2;
+        
+        if (newPhase !== boss.phase) {
+            boss.phase = newPhase;
+            playSound('phaseChange');
+            phaseIndicator.style.display = 'block';
+            phaseIndicator.innerText = `⚠️ ФАЗА ${boss.phase} ⚠️`;
+            setTimeout(() => { phaseIndicator.style.display = 'none'; }, 2000);
+            createParticles(boss.x + boss.w/2, boss.y + boss.h/2, '#ff0000', 30, 10);
+        }
+
+        // Скорость зависит от фазы
+        const speedMultiplier = 1 + (boss.phase - 1) * 0.3;
+        
+        // Таймеры атак
+        if (boss.attackCooldown > 0) boss.attackCooldown--;
+        if (boss.dashCooldown > 0) boss.dashCooldown--;
+        if (boss.attackWarning > 0) boss.attackWarning--;
+
+        // Частота атак зависит от фазы
+        const attackInterval = 120 - (boss.phase * 20); // Фаза 1: 100, Фаза 2: 80, Фаза 3: 60
+        const dashInterval = 200 - (boss.phase * 40); // Фаза 1: 160, Фаза 2: 120, Фаза 3: 80
+
+        // Атака 1: Бросок снаряда
+        if (boss.attackCooldown <= 0) {
+            boss.attackWarning = 30; // Предупреждение за 0.5 сек
+            playSound('warning');
+            boss.attackCooldown = attackInterval;
+        }
+
+        if (boss.attackWarning <= 0 && boss.attackCooldown > attackInterval - 30) {
+            // Бросаем снаряд в игрока
+            const dx = player.x - boss.x;
+            const dy = player.y - boss.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const speed = 5 + boss.phase; // Быстрее с каждой фазой
+            
+            bossProjectiles.push({
+                x: boss.x + boss.w/2,
+                y: boss.y + boss.h/2,
+                vx: (dx / dist) * speed,
+                vy: (dy / dist) * speed,
+                w: 20,
+                h: 20,
+                life: 200
+            });
+            playSound('bossThrow');
+        }
+
+        // Атака 2: Рывок (только фаза 2 и 3)
+        if (boss.phase >= 2 && boss.dashCooldown <= 0) {
+            boss.dashCooldown = dashInterval;
+            
+            // Рывок к игроку
+            const dashSpeed = (6 + boss.phase * 2) * speedMultiplier;
+            const dashDir = player.x > boss.x ? 1 : -1;
+            boss.x += dashDir * dashSpeed * 10; // Быстрое перемещение
+            
+            playSound('bossDash');
+            createParticles(boss.x + boss.w/2, boss.y + boss.h/2, '#ff0000', 20, 8);
+        }
+
+        // Движение к игроку (медленное преследование)
+        const distToPlayer = Math.abs(player.x - boss.x);
+        if (distToPlayer > 100) {
+            boss.x += (player.x > boss.x ? 1 : -1) * boss.speed * speedMultiplier * 0.5;
+        }
+
+        // Не даём уйти за границы арены
+        if (boss.x < 50) boss.x = 50;
+        if (boss.x > canvas.width - 50 - boss.w) boss.x = canvas.width - 50 - boss.w;
+
+        // Гравитация
+        boss.vy = (boss.vy || 0) + 0.7;
+        boss.y += boss.vy;
+        boss.grounded = false;
+
+        // Коллизия с платформами
+        platforms.forEach(plat => {
+            if (boss.x < plat.x + plat.w && boss.x + boss.w > plat.x &&
+                boss.y < plat.y + plat.h && boss.y + boss.h > plat.y) {
+                if (boss.vy > 0 && boss.y + boss.h - boss.vy <= plat.y) {
+                    boss.grounded = true;
+                    boss.vy = 0;
+                    boss.y = plat.y - boss.h;
+                }
+            }
         });
     }
 
@@ -392,10 +598,9 @@
         else if (keys.left) { player.vx = -player.speed; player.facingRight = false; }
         else { player.vx = 0; }
 
-        // ПРЫЖОК (с двойным!)
         if (keys.up) {
             jump();
-            keys.up = false; // Чтобы не спамить прыжки
+            keys.up = false;
         }
 
         if (keys.throw) throwProjectile();
@@ -413,7 +618,6 @@
             playerDie();
         }
 
-        // Коллизия с платформами
         player.grounded = false;
         levelData.platforms.forEach(plat => {
             if (player.x < plat.x + plat.w && player.x + player.w > plat.x &&
@@ -423,12 +627,12 @@
                     player.grounded = true;
                     player.vy = 0;
                     player.y = plat.y - player.h;
-                    player.jumpCount = 0; // Сброс прыжков на земле
+                    player.jumpCount = 0;
                 }
             }
         });
 
-        // === СНАРЯДЫ ===
+        // === СНАРЯДЫ ИГРОКА ===
         for (let i = projectiles.length - 1; i >= 0; i--) {
             let proj = projectiles[i];
             proj.x += proj.vx;
@@ -458,8 +662,32 @@
                         playSound('win');
                     }
                     updateUI();
+                    updateBossHealthUI();
                 }
             });
+        }
+
+        // === СНАРЯДЫ БОССА ===
+        for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+            let proj = bossProjectiles[i];
+            proj.x += proj.vx;
+            proj.y += proj.vy;
+            proj.life--;
+
+            if (proj.life <= 0 || proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) {
+                bossProjectiles.splice(i, 1);
+                continue;
+            }
+
+            // Попадание в игрока
+            if (player.invincible <= 0 &&
+                proj.x < player.x + player.w && proj.x + proj.w > player.x &&
+                proj.y < player.y + player.h && proj.y + proj.h > player.y) {
+                
+                playerDie();
+                bossProjectiles.splice(i, 1);
+                createParticles(player.x + player.w/2, player.y + player.h/2, '#ff0000', 15, 6);
+            }
         }
 
         // === ВРАГИ ===
@@ -470,24 +698,31 @@
                 enemy.respawnInvincible--;
             }
 
-            updateEnemyAI(enemy, levelData.platforms);
+            // БОСС с умным ИИ
+            if (enemy.type === 'boss') {
+                updateBossAI(enemy, levelData.platforms);
+            } else {
+                updateEnemyAI(enemy, levelData.platforms);
+                enemy.x += enemy.speed * enemy.dir;
+            }
 
-            enemy.x += enemy.speed * enemy.dir;
+            // Гравитация для обычных врагов
+            if (enemy.type !== 'boss') {
+                enemy.vy = (enemy.vy || 0) + 0.7;
+                enemy.y += enemy.vy;
+                enemy.grounded = false;
 
-            enemy.vy = (enemy.vy || 0) + 0.7;
-            enemy.y += enemy.vy;
-            enemy.grounded = false;
-
-            levelData.platforms.forEach(plat => {
-                if (enemy.x < plat.x + plat.w && enemy.x + enemy.w > plat.x &&
-                    enemy.y < plat.y + plat.h && enemy.y + enemy.h > plat.y) {
-                    if (enemy.vy > 0 && enemy.y + enemy.h - enemy.vy <= plat.y) {
-                        enemy.grounded = true;
-                        enemy.vy = 0;
-                        enemy.y = plat.y - enemy.h;
+                levelData.platforms.forEach(plat => {
+                    if (enemy.x < plat.x + plat.w && enemy.x + enemy.w > plat.x &&
+                        enemy.y < plat.y + plat.h && enemy.y + enemy.h > plat.y) {
+                        if (enemy.vy > 0 && enemy.y + enemy.h - enemy.vy <= plat.y) {
+                            enemy.grounded = true;
+                            enemy.vy = 0;
+                            enemy.y = plat.y - enemy.h;
+                        }
                     }
-                }
-            });
+                });
+            }
 
             if (enemy.y > canvas.height + 50) {
                 enemy.x = enemy.startX;
@@ -498,7 +733,8 @@
                 createParticles(enemy.x, enemy.y, '#ffff00', 15);
             }
 
-            if (enemy.respawnInvincible <= 0 &&
+            // Столкновение с игроком
+            if (enemy.respawnInvincible <= 0 && enemy.type !== 'boss' &&
                 player.x < enemy.x + enemy.w && player.x + player.w > enemy.x &&
                 player.y < enemy.y + enemy.h && player.y + player.h > enemy.y) {
                 
@@ -531,6 +767,7 @@
         });
 
         updateUI();
+        updateBossHealthUI();
     }
 
     function playerDie() {
@@ -547,6 +784,7 @@
             player.vy = 0;
             player.jumpCount = 0;
             projectiles = [];
+            bossProjectiles = [];
         }
         updateUI();
     }
@@ -573,7 +811,7 @@
         ctx.font = '12px Arial';
         ctx.fillText("EXIT", f.x + 15, f.y + 30);
 
-        // Снаряды
+        // Снаряды игрока
         projectiles.forEach(proj => {
             ctx.shadowBlur = 15;
             ctx.shadowColor = '#00ffff';
@@ -584,10 +822,30 @@
             ctx.shadowBlur = 0;
         });
 
+        // Снаряды босса
+        bossProjectiles.forEach(proj => {
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff0000';
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+            ctx.arc(proj.x + proj.w/2, proj.y + proj.h/2, proj.w/2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // warning ring
+            ctx.strokeStyle = '#ff6600';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        });
+
         // Враги
         levelData.enemies.forEach(enemy => {
             if (enemy.hp <= 0) return;
-            drawSlava(enemy);
+            if (enemy.type === 'boss') {
+                drawBoss(enemy);
+            } else {
+                drawSlava(enemy);
+            }
         });
 
         // Игрок
@@ -638,7 +896,6 @@
             ctx.fillRect(p.x + 5, p.y + 15, 15, 6);
         }
 
-        // Индикатор перезарядки
         if (p.throwCooldown > 0) {
             ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
             ctx.fillRect(p.x, p.y - 15, p.w, 5);
@@ -646,7 +903,6 @@
             ctx.fillRect(p.x, p.y - 15, p.w * (1 - p.throwCooldown/15), 5);
         }
 
-        // Индикатор прыжков
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(p.x, p.y - 25, p.w, 5);
         for (let i = 0; i < p.maxJumps; i++) {
@@ -698,11 +954,95 @@
         ctx.fillRect(e.x, e.y - 10, e.w, 5);
         ctx.fillStyle = '#00ff00';
         ctx.fillRect(e.x, e.y - 10, e.w * hpPercent, 5);
+
+        ctx.restore();
+    }
+
+    function drawBoss(boss) {
+        const cx = boss.x + boss.w/2;
         
-        if (e.type === 'boss') {
-            ctx.fillStyle = 'yellow';
-            ctx.font = 'bold 14px Arial';
-            ctx.fillText("BOSS", e.x + 5, e.y - 15);
+        ctx.save();
+        
+        // Мигание при предупреждении атаки
+        if (boss.attackWarning > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+            ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+        }
+
+        // Цвет зависит от фазы
+        if (boss.phase === 1) {
+            ctx.fillStyle = '#cc0000';
+        } else if (boss.phase === 2) {
+            ctx.fillStyle = '#ff6600';
+        } else {
+            ctx.fillStyle = '#ff00ff';
+        }
+        
+        ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
+
+        // Лицо
+        ctx.fillStyle = '#ffe0bd';
+        ctx.fillRect(boss.x + 8, boss.y + 8, boss.w - 16, 30);
+
+        // Борода (больше чем у обычных)
+        ctx.fillStyle = '#331100';
+        ctx.beginPath();
+        ctx.moveTo(boss.x, boss.y + 25);
+        ctx.lineTo(cx, boss.y + boss.h - 8);
+        ctx.lineTo(boss.x + boss.w, boss.y + 25);
+        ctx.fill();
+
+        // Злые глаза (светятся в фазе 3)
+        if (boss.phase === 3) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ff0000';
+        }
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.moveTo(boss.x + 15, boss.y + 20);
+        ctx.lineTo(boss.x + 25, boss.y + 15);
+        ctx.lineTo(boss.x + 25, boss.y + 25);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(boss.x + boss.w - 15, boss.y + 20);
+        ctx.lineTo(boss.x + boss.w - 25, boss.y + 15);
+        ctx.lineTo(boss.x + boss.w - 25, boss.y + 25);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Корона босса
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.moveTo(boss.x, boss.y);
+        ctx.lineTo(boss.x + 10, boss.y - 15);
+        ctx.lineTo(boss.x + 20, boss.y);
+        ctx.lineTo(boss.x + boss.w/2, boss.y - 20);
+        ctx.lineTo(boss.x + boss.w - 20, boss.y);
+        ctx.lineTo(boss.x + boss.w - 10, boss.y - 15);
+        ctx.lineTo(boss.x + boss.w, boss.y);
+        ctx.fill();
+
+        // Полоска здоровья
+        const hpPercent = boss.hp / boss.maxHp;
+        ctx.fillStyle = 'red';
+        ctx.fillRect(boss.x, boss.y - 20, boss.w, 6);
+        ctx.fillStyle = boss.phase === 3 ? '#ff00ff' : '#00ff00';
+        ctx.fillRect(boss.x, boss.y - 20, boss.w * hpPercent, 6);
+        
+        // Индикатор фазы
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText(`ФАЗА ${boss.phase}`, boss.x + 5, boss.y - 25);
+
+        // Индикатор атаки
+        if (boss.attackWarning > 0) {
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+            ctx.beginPath();
+            ctx.arc(cx, boss.y + boss.h/2, 50, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('⚠️', cx - 10, boss.y + boss.h/2 + 5);
         }
 
         ctx.restore();
@@ -710,6 +1050,8 @@
 
     function gameOver() {
         isGameRunning = false;
+        bossHealth.style.display = 'none';
+        phaseIndicator.style.display = 'none';
         overlayTitle.innerText = "ТЫ ПРОИГРАЛ";
         overlayTitle.style.color = "red";
         overlayText.innerText = "Слава Марлоу захватил мир...";
@@ -719,6 +1061,8 @@
 
     function gameWin() {
         isGameRunning = false;
+        bossHealth.style.display = 'none';
+        phaseIndicator.style.display = 'none';
         overlayTitle.innerText = "ПОБЕДА!";
         overlayTitle.style.color = "#00ff00";
         overlayText.innerText = "Ты очистил город от Славы и стал легендой!";
